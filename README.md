@@ -33,12 +33,16 @@ The agent never places orders on its own. Every purchase order is marked **AWAIT
 | Monitor agent built with Google ADK + Gemini | ✅ Done |
 | Draft purchase orders with human approval status | ✅ Done |
 | Chat interface (ADK Dev UI) | ✅ Done |
+| Web dashboard: supplier map, risk alerts, inventory runway, 7-day weather | ✅ Done |
+| Purchase order approve / reject + PO download | ✅ Done |
+| What-if simulator (stock, usage, delay) | ✅ Done |
+| AI assistant chat inside the dashboard | ✅ Done |
 | Fallback demo script (no LLM needed) | ✅ Done |
 | Forecast agent (demand forecasting) | ⏳ Planned |
 | Procurement agent + PO approval workflow | ⏳ Planned |
 | News, FX and commodity price tools | ⏳ Planned |
 | PostgreSQL (Cloud SQL) + SQLAlchemy | ⏳ Planned |
-| Streamlit dashboard + FastAPI backend | ⏳ Planned |
+| FastAPI backend + login | ⏳ Planned |
 | Deployment on Google Cloud Run | ⏳ Planned |
 
 ---
@@ -94,6 +98,8 @@ dream-data-reorderai/
 │   ├── __init__.py        # makes the agent loadable by ADK
 │   ├── agent.py           # inventory, tools and the agent
 │   └── .env               # your API key (NOT committed)
+├── web/                   # dashboard page (HTML, CSS, JS, icons)
+├── app.py                 # dashboard server: python app.py
 ├── demo.py                # fallback demo: runs the tools without Gemini
 ├── .env.example           # template for the .env file
 ├── requirements.txt
@@ -149,7 +155,27 @@ GOOGLE_API_KEY=your_api_key_here
 
 ## Running
 
-### Option A: Agent chat UI (main demo)
+### Option A: Dashboard (main demo)
+
+From the project root folder:
+
+```bash
+python app.py
+```
+
+It opens **http://127.0.0.1:8080** in your browser. The dashboard shows:
+
+- **KPIs**: products monitored, high-risk items, next stock-out, value awaiting approval
+- **Supplier network map**: every supplier, colored by risk, with shipping lanes to the warehouse
+- **Risk alerts**: stock and weather warnings
+- **Inventory runway**: days of stock left vs. days until a new order arrives, plus a 7-day rain chart
+- **Draft purchase orders**: approve, reject, undo, download the PO
+- **What-if simulator**: change stock, usage or delay and see the risk update live
+- **Ask ReorderAI**: chat with the Gemini agent (shows which tools it called)
+
+The dashboard data does not need Gemini, so it keeps working even when the free AI quota is used up. Only the chat uses Gemini.
+
+### Option B: ADK developer UI
 
 From the project root folder:
 
@@ -163,7 +189,7 @@ python -m google.adk.cli web
 
 The UI shows each tool call and the final risk table with draft purchase orders.
 
-### Option B: Fallback demo (no Gemini needed)
+### Option C: Terminal demo (no Gemini needed)
 
 ```bash
 python demo.py
@@ -181,6 +207,7 @@ Runs the same tools directly (live weather included) and prints the risk report 
 | `adk` command blocked | Use `python -m google.adk.cli web` instead of `adk web` |
 | `404 NOT_FOUND ... model is no longer available` | Change `model=` in `agent.py` to a current model from AI Studio |
 | `503 UNAVAILABLE ... high demand` | Gemini is busy. Wait a bit, then send `Continue` in the same session, or switch to another flash model |
+| `429 RESOURCE_EXHAUSTED` (free daily limit) | Add `GEMINI_MODEL=gemini-3.8-flash` (or another model) to `reorder_agent/.env` and restart |
 | Chat keeps loading forever after restarting the server | Close the old tab and open http://127.0.0.1:8000 again (sessions reset on restart) |
 
 ---
@@ -190,4 +217,4 @@ Runs the same tools directly (live weather included) and prints the risk report 
 - **Sprint 1:** Move inventory to PostgreSQL (Cloud SQL) with SQLAlchemy; add news and FX tools
 - **Sprint 2:** Forecast agent for demand forecasting
 - **Sprint 3:** Procurement agent and PO approval workflow (approve / reject)
-- **Sprint 4:** Streamlit dashboard, FastAPI backend, deploy on Cloud Run with Secret Manager and Cloud Scheduler, CI with GitHub Actions
+- **Sprint 4:** FastAPI backend, user login, deploy on Cloud Run with Secret Manager and Cloud Scheduler, CI with GitHub Actions

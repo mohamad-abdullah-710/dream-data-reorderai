@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReorderAI · Supply Risk Center</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- animated background -->
+  <div class="bg" aria-hidden="true">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+    <div class="grid-overlay"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="logo.svg" alt="" class="logo">
+      <div>
+        <div class="brand-name">Reorder<span>AI</span></div>
+        <div class="brand-sub">Supply risk command center</div>
+      </div>
+    </div>
+    <div class="top-meta">
+      <span class="chip live"><span class="pulse"></span>Live weather</span>
+      <span class="chip" id="modelChip" data-icon="bot">AI</span>
+      <span class="chip muted" id="updated">Loading…</span>
+      <button class="btn ghost" id="refreshBtn" data-icon="refresh">Refresh</button>
+      <button class="btn primary" id="askBtn" data-icon="sparkles">Ask ReorderAI</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <h1>Know what will run out <em>before</em> it runs out.</h1>
+        <p>ReorderAI watches live weather at every supplier, compares it with your stock,
+          and drafts purchase orders for you to approve.</p>
+      </div>
+      <div class="flow">
+        <span data-icon="package">Inventory</span><i></i>
+        <span data-icon="cloudRain">Weather</span><i></i>
+        <span data-icon="activity">Risk</span><i></i>
+        <span data-icon="shield">You approve</span>
+      </div>
+    </section>
+
+    <section class="kpis" id="kpis">
+      <div class="card kpi skeleton"></div><div class="card kpi skeleton"></div>
+      <div class="card kpi skeleton"></div><div class="card kpi skeleton"></div>
+    </section>
+
+    <section class="row two">
+      <div class="card map-card">
+        <div class="card-head">
+          <h2 data-icon="globe">Supplier network</h2>
+          <div class="legend">
+            <span><b class="dot high"></b>High</span><span><b class="dot medium"></b>Medium</span><span><b class="dot low"></b>Low</span>
+          </div>
+        </div>
+        <div id="map" class="map"></div>
+      </div>
+      <div class="card alerts-card">
+        <div class="card-head"><h2 data-icon="alert">Risk alerts</h2><span class="count" id="alertCount"></span></div>
+        <ul class="alerts" id="alerts"><li class="skeleton line"></li><li class="skeleton line"></li><li class="skeleton line"></li></ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 data-icon="package">Inventory runway</h2>
+        <span class="hint">Bar = days of stock left · marker = days until a new order arrives</span>
+      </div>
+      <div class="table-wrap">
+        <table class="inv">
+          <thead><tr>
+            <th>Product</th><th>Supplier</th><th class="num">Stock</th><th class="num">Use / day</th>
+            <th class="runway-col">Runway</th><th>7-day weather</th><th>Risk</th>
+          </tr></thead>
+          <tbody id="invBody"><tr><td colspan="7"><div class="skeleton line"></div></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="row two">
+      <div class="card">
+        <div class="card-head">
+          <h2 data-icon="truck">Draft purchase orders</h2>
+          <span class="hint" data-icon="shield">Nothing is ordered without your approval</span>
+        </div>
+        <div class="orders" id="orders"></div>
+      </div>
+      <div class="card sim">
+        <div class="card-head"><h2 data-icon="sliders">What-if simulator</h2></div>
+        <label class="field">Product
+          <select id="simProduct"></select>
+        </label>
+        <label class="field">Stock <output id="simStockOut"></output>
+          <input type="range" id="simStock" min="0" max="600" step="5">
+        </label>
+        <label class="field">Daily usage <output id="simUseOut"></output>
+          <input type="range" id="simUse" min="1" max="80" step="1">
+        </label>
+        <label class="field">Extra shipping delay <output id="simDelayOut"></output>
+          <input type="range" id="simDelay" min="0" max="10" step="1">
+        </label>
+        <div class="sim-result" id="simResult"></div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Built with Google ADK + Gemini · Weather by Open-Meteo · Map © OpenStreetMap, © CARTO
+    </footer>
+  </main>
+
+  <!-- AI assistant drawer -->
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="bot-avatar" data-icon="bot"></div>
+      <div>
+        <div class="drawer-title">ReorderAI assistant</div>
+        <div class="drawer-sub" id="drawerModel">Gemini agent · uses the same tools</div>
+      </div>
+      <button class="icon-btn" id="closeDrawer" data-icon="x" aria-label="Close"></button>
+    </div>
+    <div class="messages" id="messages">
+      <div class="msg bot intro">
+        Hi! I can check your stock, supplier weather and risks, and draft purchase orders.
+        Try one of these:
+      </div>
+      <div class="suggestions" id="suggestions">
+        <button>Check my stock risks and draft purchase orders.</button>
+        <button>Which product is the most at risk and why?</button>
+        <button>What is the weather like in Sao Paulo this week?</button>
+        <button>What if Flour usage goes up to 30 per day?</button>
+      </div>
+    </div>
+    <form class="composer" id="composer">
+      <input id="chatInput" placeholder="Ask about stock, suppliers, risks…" autocomplete="off">
+      <button class="send" data-icon="send" aria-label="Send"></button>
+    </form>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <button class="fab" id="fab" data-icon="sparkles" aria-label="Ask ReorderAI"></button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
