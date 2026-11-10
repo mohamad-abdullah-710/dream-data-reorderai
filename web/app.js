@@ -80,8 +80,21 @@ async function load(force = false) {
 
 function render() {
   const d = state.data;
-  const products = [...d.products].sort(
-    (a, b) => RISK_ORDER[a.risk.risk_level] - RISK_ORDER[b.risk.risk_level] || a.risk.days_of_stock_left - b.risk.days_of_stock_left);
+  const products = [...d.products].sort((a, b) => {
+    const riskDiff =
+      RISK_ORDER[a.risk.risk_level] - RISK_ORDER[b.risk.risk_level];
+  
+    if (riskDiff !== 0) return riskDiff;
+  
+    const aDays = a.risk.days_of_stock_left;
+    const bDays = b.risk.days_of_stock_left;
+  
+    if (aDays === null && bDays === null) return 0;
+    if (aDays === null) return 1;
+    if (bDays === null) return -1;
+  
+    return aDays - bDays;
+  });
 
   const time = new Date(d.generated_at);
   $("updated").textContent = "Updated " + time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -99,7 +112,15 @@ function render() {
 function renderKPIs(products) {
   const high = products.filter((p) => p.risk.risk_level === "HIGH");
   const medium = products.filter((p) => p.risk.risk_level === "MEDIUM");
-  const next = products.reduce((a, b) => (b.risk.days_of_stock_left < a.risk.days_of_stock_left ? b : a));
+  const next = products
+  .filter((p) => p.risk.days_of_stock_left !== null)
+  .reduce(
+    (a, b) =>
+      !a || b.risk.days_of_stock_left < a.risk.days_of_stock_left
+        ? b
+        : a,
+    null
+  );
   const pending = products.filter((p) => p.order_status === "pending");
   const approved = products.filter((p) => p.order_status === "approved");
   const pendingValue = pending.reduce((s, p) => s + p.order_value, 0);
@@ -110,8 +131,10 @@ function renderKPIs(products) {
       sub: products.length + " suppliers · " + new Set(products.map((p) => p.supplier_city)).size + " cities" },
     { cls: "high", ic: "alert", label: "High risk", value: high.length,
       sub: high.length ? high.map((p) => p.name).join(", ") : "Nothing critical", },
-    { cls: "medium", ic: "clock", label: "Next stock-out", value: next.risk.days_of_stock_left, unit: "days",
-      sub: next.name },
+    { cls: "medium", ic: "clock", label: "Next stock-out",
+      value: next ? next.risk.days_of_stock_left : "N/A",
+      unit: next ? "days" : "",
+      sub: next ? next.name : "No products currently being consumed" },
     { cls: "violet", ic: "coins", label: "Awaiting your approval", value: money.format(pendingValue),
       sub: pending.length + " draft orders" + (approved.length ? " · " + money.format(approvedValue) + " approved" : "") },
   ];
@@ -149,7 +172,7 @@ function popupHtml(p) {
   return `<div class="pop-title">${esc(p.supplier)}</div>
     <div class="pop-sub">${esc(p.supplier_city)} · supplies ${esc(p.name)}</div>
     <div style="margin-top:8px"><span class="badge ${r.risk_level}">${r.risk_level}</span></div>
-    <div style="margin-top:8px">${r.days_of_stock_left} days of stock · arrives in ${r.days_until_new_order_arrives} days</div>
+    <div style="margin-top:8px">${r.days_of_stock_left === null ? "No consumption" : r.days_of_stock_left + " days of stock"} · arrives in ${r.days_until_new_order_arrives} days</div>
     <div class="pop-sub">${esc(wx)}</div>`;
 }
 
@@ -251,12 +274,27 @@ function renderAlerts(products) {
 
 /* ---------------- inventory table ---------------- */
 function renderTable(products) {
-  const maxDays = Math.min(30, Math.max(...products.map((p) => Math.max(p.risk.days_of_stock_left, p.risk.days_until_new_order_arrives))) * 1.1);
+  const maxDays = Math.max(
+    1,
+    Math.min(
+      30,
+      Math.max(
+        ...products.map((p) =>
+          Math.max(
+            p.risk.days_of_stock_left ?? 0,
+            p.risk.days_until_new_order_arrives
+          )
+        )
+      ) * 1.1
+    )
+  );
 
   $("invBody").innerHTML = products.map((p, i) => {
     const r = p.risk;
     const color = RISK_COLOR[r.risk_level];
-    const fill = Math.min(r.days_of_stock_left / maxDays, 1) * 100;
+    const fill = r.days_of_stock_left === null
+      ? 100
+      : Math.min(r.days_of_stock_left / maxDays, 1) * 100;
     const mark = Math.min(r.days_until_new_order_arrives / maxDays, 1) * 100;
     const fc = p.forecast || [];
     const maxRain = Math.max(15, ...fc.map((d) => d.rain || 0));
@@ -271,7 +309,7 @@ function renderTable(products) {
       <td class="num">${p.daily_usage}</td>
       <td>
         <div class="runway"><div class="fill" style="width:${fill}%;background:${color}"></div><div class="mark" style="left:${mark}%"></div></div>
-        <div class="runway-label"><span>${r.days_of_stock_left} d left</span><span>arrives in ${r.days_until_new_order_arrives} d</span></div>
+        <div class="runway-label"><span>${r.days_of_stock_left === null ? "No consumption" : r.days_of_stock_left + " d left"}</span><span>arrives in ${r.days_until_new_order_arrives} d</span></div>
       </td>
       <td><div class="wx"><span class="wx-icon">${icon(wxIcon(worstCode(fc)))}</span>${spark ? `<div class="spark">${spark}</div>` : ""}<div class="wx-text">${wxText}</div></div></td>
       <td><span class="badge ${r.risk_level}"><span class="dot bg-${r.risk_level.toLowerCase()}"></span>${r.risk_level}</span></td>
@@ -313,7 +351,9 @@ function renderOrders(products) {
         <div><small>Ship from</small><b>${esc(p.supplier_city)}</b></div>
         <div><small>Arrives in</small><b>${r.days_until_new_order_arrives} d</b></div>
       </div>
-      <p class="po-reason">Only ${r.days_of_stock_left} days of stock left, but delivery takes ${p.lead_time_days} days${delayOf(p) ? ` + ${delayOf(p)} day weather delay` : ""}. Quantity covers delivery time plus 14 days of buffer.</p>
+      <p class="po-reason">${r.days_of_stock_left === null
+        ? "No daily consumption; stock is not being depleted."
+        : `Only ${r.days_of_stock_left} days of stock left, but delivery takes ${p.lead_time_days} days${delayOf(p) ? ` + ${delayOf(p)} day weather delay` : ""}. Quantity covers delivery time plus 14 days of buffer.`}</p>
       <div class="po-actions">${actions}</div>
     </div>`;
   }).join("");
@@ -330,7 +370,10 @@ function downloadPo(name, id) {
     "Quantity:   " + r.suggested_order_quantity + " units",
     "Unit cost:  " + money.format(p.unit_cost),
     "Total:      " + money.format(p.order_value),
-    "Risk:       " + r.risk_level + " (" + r.days_of_stock_left + " days of stock left)",
+    "Risk:       " + r.risk_level + " (" +
+      (r.days_of_stock_left === null
+        ? "No daily consumption"
+        : r.days_of_stock_left + " days of stock left") + ")",
     "Approved:   " + p.order_decided_at,
   ].join("\n");
   const a = document.createElement("a");
@@ -380,14 +423,16 @@ function runSimulator() {
   simTimer = setTimeout(async () => {
     const r = await api("/api/simulate", { stock, daily_usage: use, lead_time_days: p.lead_time_days, delay });
     const color = RISK_COLOR[r.risk_level];
-    const ratio = Math.min(r.days_of_stock_left / (r.days_until_new_order_arrives + 3), 1);
+    const ratio = r.days_of_stock_left === null
+      ? 1
+      : Math.min(r.days_of_stock_left / (r.days_until_new_order_arrives + 3), 1);
     const C = 2 * Math.PI * 52;
     $("simResult").innerHTML = `
       <div class="gauge">
         <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,0.08)" stroke-width="10" fill="none"/>
         <circle cx="60" cy="60" r="52" stroke="${color}" stroke-width="10" fill="none" stroke-linecap="round"
           stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - ratio)}" style="transition:stroke-dashoffset .5s, stroke .3s"/></svg>
-        <div class="g-text"><div><b>${r.days_of_stock_left}</b><small>days left</small></div></div>
+        <div class="g-text"><div><b>${r.days_of_stock_left === null ? "∞" : r.days_of_stock_left}</b><small>${r.days_of_stock_left === null ? "no consumption" : "days left"}</small></div></div>
       </div>
       <div class="sim-facts">
         <div><span class="badge ${r.risk_level}">${r.risk_level} RISK</span></div>

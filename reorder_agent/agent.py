@@ -84,28 +84,57 @@ def delay_from_weather(max_rain: float, max_wind: float) -> int:
 # ---------------------------------------------------------------
 # 4. TOOL: calculate stock-out risk (math in Python, not the LLM)
 # ---------------------------------------------------------------
-def calculate_risk(stock: int, daily_usage: int, lead_time_days: int, expected_delay_days: int) -> dict:
-    """Calculates how many days of stock are left and compares it with
-    the total time a new order would take to arrive. Returns a risk level
-    (HIGH, MEDIUM, LOW) and a suggested order quantity."""
-    days_left = stock / daily_usage if daily_usage else 999
+
+def calculate_risk(
+    stock: int,
+    daily_usage: int,
+    lead_time_days: int,
+    expected_delay_days: int,
+) -> dict:
+    """Calculate stock-out risk and suggest a reorder quantity.
+
+    Reject negative inputs and handle zero daily usage explicitly.
+    """
+
+    values = {
+        "stock": stock,
+        "daily_usage": daily_usage,
+        "lead_time_days": lead_time_days,
+        "expected_delay_days": expected_delay_days,
+    }
+
+    for name, value in values.items():
+        if value < 0:
+            raise ValueError(f"{name} cannot be negative")
+
     arrival_days = lead_time_days + expected_delay_days
 
-    if days_left < arrival_days:
-        risk = "HIGH"
-    elif days_left < arrival_days + 3:
-        risk = "MEDIUM"
-    else:
+    if daily_usage == 0:
+        days_left = float("inf")
         risk = "LOW"
+        suggested_qty = 0
+    else:
+        days_left = stock / daily_usage
 
-    suggested_qty = max(0, int(daily_usage * (arrival_days + 14) - stock))
+        if days_left < arrival_days:
+            risk = "HIGH"
+        elif days_left < arrival_days + 3:
+            risk = "MEDIUM"
+        else:
+            risk = "LOW"
+
+        suggested_qty = max(
+            0,
+            int(daily_usage * (arrival_days + 14) - stock),
+        )
 
     return {
-        "days_of_stock_left": round(days_left, 1),
+        "days_of_stock_left": round(days_left, 1) if daily_usage > 0 else None,
         "days_until_new_order_arrives": arrival_days,
         "risk_level": risk,
         "suggested_order_quantity": suggested_qty,
     }
+
 
 
 # ---------------------------------------------------------------
